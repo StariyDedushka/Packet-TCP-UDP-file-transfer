@@ -24,6 +24,7 @@ public slots:
 
 private slots:
     void slot_timerStart();
+    void measureSpeed();
 
 signals:
     void signal_warning_listeningFailed();
@@ -36,6 +37,7 @@ signals:
     void signal_sendProgress(qint64 sendSize);
     void signal_sendFilesize(qint64 fileSize);
     void signal_error(QString error);
+    void signal_measuredSpeed(quint64 mbitps);
 public:
     TCPServer();
     ~TCPServer();
@@ -47,9 +49,11 @@ private:
     QString filename;
     qint64 fileSize;
     qint64 sendSize;
+    qint64 prevSendSize;
 
     void sendData();
     QTimer *timer;
+    QTimer *measureTimer;
 
 };
 

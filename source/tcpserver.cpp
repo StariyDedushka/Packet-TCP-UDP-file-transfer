@@ -5,6 +5,8 @@ TCPServer::TCPServer()
     tcpServer = new QTcpServer();
     tcpSocket = new QTcpSocket();
     timer = new QTimer();
+    measureTimer = new QTimer();
+    measureTimer->setInterval(500);
     file = new QFile();
 
 
@@ -14,6 +16,7 @@ TCPServer::TCPServer()
     connect(tcpSocket, &QTcpSocket::disconnected, this, &TCPServer::slot_disconnected);
     connect(tcpSocket, &QAbstractSocket::errorOccurred, this, &TCPServer::slot_error);
     connect(timer, &QTimer::timeout, this, &TCPServer::slot_timerStart);
+    connect(measureTimer, &QTimer::timeout, this, &TCPServer::measureSpeed);
 }
 
 TCPServer::~TCPServer()
@@ -50,6 +53,7 @@ void TCPServer::slot_btnFilepath_clicked(QString filepath, bool tcpMode)
 
 void TCPServer::slot_btnSend_clicked()
 {
+    measureTimer->start();
     // Сначала отправим заголовок с именем и размером файла
     QString buffer = QString("head#%1#%2").arg(filename).arg(fileSize);
     qDebug() << "TCP SERVER: Sending header: filename: " << filename << "file size: " << fileSize;
@@ -67,7 +71,7 @@ void TCPServer::slot_btnSend_clicked()
 void TCPServer::sendData()
 {
     qint64 len = 0;
-    qDebug() << "TCP SERVER: sendData() called!";
+    // qDebug() << "TCP SERVER: sendData() called!";
     emit signal_sendFilesize(fileSize);
     do
     {
@@ -75,7 +79,7 @@ void TCPServer::sendData()
         char buf[1024 * 2] = {0};
         len = file->read(buf, sizeof(buf));
         len = tcpSocket->write(buf, len);
-        qDebug() << "TCP SERVER: writing data to socket, length:" << len;
+        // qDebug() << "TCP SERVER: writing data to socket, length:" << len;
         sendSize += len;
         emit signal_sendProgress(sendSize);
 
@@ -87,6 +91,7 @@ void TCPServer::sendData()
         emit signal_fileSent();
         file->close();
         tcpSocket->close();
+        measureTimer->stop();
     }
 }
 
@@ -158,4 +163,13 @@ void TCPServer::slot_error(QAbstractSocket::SocketError error)
     break;
     }
     emit signal_error(errorStr);
+}
+
+
+void TCPServer::measureSpeed()
+{
+    quint64 mbitps = (sendSize - prevSendSize) / (1024 * 1024) * 8; // мбиты в секунду
+    prevSendSize = sendSize;
+    qDebug() << "TCP SERVER: measureSpeed() timer timeout! speed:" << mbitps;
+    emit signal_measuredSpeed(mbitps);
 }

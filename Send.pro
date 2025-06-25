@@ -17,16 +17,16 @@ SOURCES += \
     source/main.cpp \
     source/mainwindow.cpp \
     source/tcpclient.cpp \
-    source/udpclient.cpp \
     source/tcpserver.cpp \
+    source/udpclient.cpp \
     source/udpserver.cpp
 
 # Заголовочные файлы
 HEADERS += \
     include/mainwindow.h \
     include/tcpclient.h \
-    include/udpclient.h \
     include/tcpserver.h \
+    include/udpclient.h \
     include/udpserver.h
 
 # UI-файлы из папки ui

@@ -4,7 +4,9 @@ UDPServer::UDPServer()
 {
     udpsocket = new QUdpSocket(this);
     file = new QFile();
-    timer = new QTimer();
+    connect(udpsocket, &QUdpSocket::readyRead, this, &UDPServer::slot_readyToRead);
+    isFile = false;
+    udpsocket->setReadBufferSize(128 * 1024 * 1024);
 }
 
 UDPServer::~UDPServer()
@@ -13,82 +15,137 @@ UDPServer::~UDPServer()
     delete file;
 }
 
-void UDPServer::slot_btnFilepath_clicked(QString filepath, bool tcpMode)
+void UDPServer::slot_portEdited(qint16 listenPort, bool tcpMode)
 {
     if(!tcpMode)
     {
-    file->setFileName(filepath);
-    qDebug() << "UDP SERVER: file path set: " << filepath;
-    if(file->open(QIODevice::ReadOnly) == false)
-    {
-        emit signal_warning_openFileFailed();
-        qDebug() << "UDP SERVER: Failed to open file";
-    }
-    else {
-        emit signal_fileOpen(filepath);
-        qDebug() << "UDP SERVER: File opened successfully";
-
-        filename = "";
-        filesize = 0;
-        sendsize = 0;
-        QFileInfo info(filepath);
-        filename = info.fileName();
-        filesize = info.size();
-    }
+    udpsocket->close();
+    udpsocket->bind(listenPort);
+    boundPort = listenPort;
+    qDebug() << "UDP socket bound to port [" << listenPort << "]";
     }
 }
 
-void UDPServer::slot_btnSend_clicked(QString ip, qint16 portOut)
+void UDPServer::slot_readyToRead()
 {
-    QHostAddress ipAdd;
-    peerIp = ip;
-    peerPort = portOut;
+    if(isFile == false)
+    {
+        QNetworkDatagram datagram = udpsocket->receiveDatagram();
+        QByteArray data = datagram.data();
+        qDebug() << "Receiving datagram, size" << data.size();
 
-    ipAdd.setAddress(peerIp);
-    QByteArray datagram = QString("head#%1#%2").arg(filename).arg(filesize).toUtf8();
-    // Сначала отправим заголовок с именем и размером файла
-    qDebug() << "UDP SERVER: Sending header: filename: " << filename << "file size: " << filesize;
-    // Начинаем отправку
-    qint64 len = udpsocket->writeDatagram(datagram, ipAdd, peerPort);
-    // Сигнал для отображения сообщения о начале отправки файлов
-    emit signal_fileSend_started();
+        // фильтруем пустые датаграммы
+        if(data.size() == 0) return;
+        respondACK(&data, datagram.senderAddress(), datagram.senderPort());
 
-    if(len > 0) UDPServer::sendData();
-    else file->close();
+        // Первое чтение будет заголовка и части файла, оно должно произойти единожды
+        // Читаем заголовок, он не является частью файла и не будет записан
+        processHeader(&data);
+        if(file->open(QIODevice::WriteOnly) == false) emit signal_warning_failedFile();
+    }
+    else
+    processPendingDatagrams();
+}
+
+// Тут обрабатываем заголовок файла с именем и размером
+void UDPServer::processHeader(QByteArray *data)
+{
+    isFile = true;
+    filename = QString(*data).section("#", 1, 1);
+    filesize = QString(*data).section("#", 2, 2).toInt();
+    QString pathTmp = savepath;
+    pathTmp.append("/");
+    pathTmp.append(filename);
+    file->setFileName(pathTmp);
+
+    emit signal_info_receiving(filesize/1024);
+
+    qDebug() << "-----------------------------------------------------------------------------";
+    qDebug() << "UDP SERVER: receiving header: File name: " << filename << ", file size " << filesize << " bytes.";
+    qDebug() << "UDP SERVER: received file full path:" << pathTmp;
+    qDebug() << "UDP SERVER: received header datagram size:" << data->size();
+
+}
+
+void UDPServer::processPendingDatagrams()
+{
+    while(udpsocket->hasPendingDatagrams())
+    {
+        QNetworkDatagram datagram = udpsocket->receiveDatagram();
+        QByteArray data = datagram.data();
+        respondACK(&data, datagram.senderAddress(), datagram.senderPort());
+
+        if(checkForEndingMarker(data) == true) finish_receiving();
+
+        qint64 len = file->write(data);
+        receivedSize += len;
+        // qDebug() << "UDP SERVER: Written len == datagram->size()?:" << (len == data.size());
+        emit signal_info_receive_progress(receivedSize/1024);
+    }
+
+}
+
+bool UDPServer::checkForEndingMarker(const QByteArray &data)
+{
+    int markerPos = data.indexOf('#');
+    qDebug() << "ACK marker position num.:" << markerPos;
+    QByteArray marker;
+    if(markerPos != -1)
+    {
+        marker = data.mid(markerPos + 1, 11);
+        // проверяем наличие маркера конца файла (magic number) и при наличии закрываем файл,
+        // сокет, биндим сокет заново и ставим флаг чтобы следующие датаграммы читались как
+        // часть заголовка
+        // qDebug() << "QString marker =" << marker;
+        // qDebug() << "Marker is null?" << marker.isNull();
+        if(marker == "end1A2B3C4D") return true;
+        else return false;
+    } else return false;
+}
+
+void UDPServer::respondACK(QByteArray *data, QHostAddress senderAddress, quint16 senderPort)
+{
+    // qDebug() << "Received from" << senderAddress << ":" << senderPort
+    //          << "data:" << data;
+
+    // Отправляем подтверждение обратно клиенту
+    QByteArray ack = "ACK#" + *data;
+    udpsocket->writeDatagram(ack, senderAddress, senderPort);
+    // qDebug() << "Sending ACK back:" << ack;
+}
+
+void UDPServer::finish_receiving()
+{
+    if(file->size() != filesize)
+    {
+        qDebug() << "UDP SERVER: WARNING! File is received partially";
+        emit signal_warning_incompleteFile();
+    }
+    qDebug() << "Received 'file end' marker, closing file and socket!";
+    file->close();
+    udpsocket->close();
+    udpsocket->bind(boundPort);
+    isFile = false;
+    emit signal_receive_finished(filename, filesize);
+}
+
+void UDPServer::slot_btnSaveDir_clicked(QString saveDir)
+{
+    savepath = saveDir;
+    qDebug() << "Saved file dir:" << savepath;
+}
+
+void UDPServer::slot_bind(qint16 listenPort)
+{
+    udpsocket->close();
+    boundPort = listenPort;
+    udpsocket->bind(listenPort);
+    qDebug() << "UDP socket bound to port [" << listenPort << "]";
 }
 
 
-void UDPServer::sendData()
+void UDPServer::slot_unbind()
 {
-    QHostAddress ipAdd;
-    QString endMarker = QString("#end1A2B3C4D");
-    ipAdd.setAddress(peerIp);
-    qDebug() << "UDP SERVER: peer ip:" << peerIp << "peer port:" << peerPort;
-    QByteArray datagram;
-
-    qint64 startTime = QDateTime::currentMSecsSinceEpoch();
-    qint64 len = 0;
-    emit signal_sendFilesize(filesize);
-    do
-    {
-        // делаем датаграммы побольше, 16 КБ
-        datagram = file->read(1024 * 16);
-        len = udpsocket->writeDatagram(datagram, ipAdd, peerPort);
-        qint64 bytesPerSecond = 1024 * 1024 * 20; // 20 мбайт/сек
-        qint64 sleepTime = (1024 * 16 * 1000) / bytesPerSecond;
-        QThread::msleep(sleepTime);
-        sendsize += len;
-        qDebug() << "UDP SERVER: sending datagram, size" << len;
-        emit signal_sendProgress(sendsize);
-    } while(len > 0);
-
-    if(sendsize == filesize)
-    {
-        datagram = endMarker.toUtf8();
-        udpsocket->writeDatagram(datagram, ipAdd, peerPort);
-        emit signal_fileSent();
-        file->close();
-        udpsocket->close();
-    }
-
+    udpsocket->close();
+    qDebug() << "UDP socket closed";
 }

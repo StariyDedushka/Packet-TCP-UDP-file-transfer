@@ -3,22 +3,24 @@
 
 #include <QObject>
 #include <QtNetwork>
-#include <QTimer>
 
 class UDPServer : public QObject
 {
     Q_OBJECT
+private slots:
+    void slot_readyToRead();
 public slots:
-    void slot_btnSend_clicked(QString ip, qint16 portOut);
-    void slot_btnFilepath_clicked(QString filepath, bool tcpMode);
+    void slot_btnSaveDir_clicked(QString saveDir);
+    void slot_portEdited(qint16 listenPort, bool tcpMode);
+    void slot_bind(qint16 listenPort);
+    void slot_unbind();
 
 signals:
-    void signal_warning_openFileFailed();
-    void signal_fileOpen(QString filepath);
-    void signal_sendFilesize(qint64 fileSize);
-    void signal_sendProgress(qint64 sendSize);
-    void signal_fileSent();
-    void signal_fileSend_started();
+    void signal_warning_failedFile();
+    void signal_info_receiving(uint maxProgress);
+    void signal_info_receive_progress(uint progress);
+    void signal_receive_finished(QString filename, qint64 filesize);
+    void signal_warning_incompleteFile();
 
 public:
     UDPServer();
@@ -27,13 +29,17 @@ public:
 private:
     QUdpSocket *udpsocket;
     QFile *file;
-    qint64 filesize;
-    qint64 sendsize;
+    QString savepath;
     QString filename;
-    QString peerIp;
-    qint16 peerPort;
-    void sendData();
-    QTimer *timer;
+    qint64 filesize;
+    qint64 receivedSize;
+    qint16 boundPort;
+    bool isFile;
+    void processHeader(QByteArray *datagram);
+    void processPendingDatagrams();
+    void finish_receiving();
+    bool checkForEndingMarker(const QByteArray &datagram);
+    void respondACK(QByteArray *data, QHostAddress senderAddress, quint16 senderPort);
 
 };
 

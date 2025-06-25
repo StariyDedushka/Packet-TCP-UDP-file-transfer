@@ -56,6 +56,7 @@ public slots:
     void slot_error(QString error);
     void slot_warning_incompleteFile();
     void slot_helpMenu();
+    void slot_measuredSpeed(quint64 mbitps);
 
 private slots:
     void on_btnDisconnect_clicked();

@@ -3,41 +3,46 @@
 
 #include <QObject>
 #include <QtNetwork>
+#include <QTimer>
+#include <QNetworkDatagram>
 
 class UDPClient : public QObject
 {
     Q_OBJECT
-private slots:
-    void slot_readyToRead();
 public slots:
-    void slot_btnSaveDir_clicked(QString saveDir);
-    void slot_portEdited(qint16 listenPort, bool tcpMode);
-    void slot_bind(qint16 listenPort);
-    void slot_unbind();
+    void slot_btnSend_clicked(QString ip, qint16 portOut);
+    void slot_btnFilepath_clicked(QString filepath, bool tcpMode);
+private slots:
+    void readPendingDatagrams();
+    void resendDatagram();
+    void readFile();
+    void measureSpeed();
 
 signals:
-    void signal_warning_failedFile();
-    void signal_info_receiving(uint maxProgress);
-    void signal_info_receive_progress(uint progress);
-    void signal_receive_finished(QString filename, qint64 filesize);
-    void signal_warning_incompleteFile();
-
+    void signal_warning_openFileFailed();
+    void signal_fileOpen(QString filepath);
+    void signal_sendFilesize(qint64 fileSize);
+    void signal_sendProgress(qint64 sendSize);
+    void signal_fileSent();
+    void signal_fileSend_started();
+    void signal_measuredSpeed(quint64 mbitps);
 public:
     UDPClient();
     ~UDPClient();
 
 private:
     QUdpSocket *udpsocket;
+    QByteArray currentData;
     QFile *file;
-    QString savepath;
-    QString filename;
+    qint64 prevSendsize;
     qint64 filesize;
-    qint64 receivedSize;
-    qint16 boundPort;
-    bool isFile;
-    void processHeader(QByteArray *datagram);
-    void processDatagram(QByteArray *datagram);
-    void finish_receiving();
+    qint64 sendsize;
+    QString filename;
+    QString peerIp;
+    qint16 peerPort;
+    QTimer *resendTimer;
+    QTimer *measureTimer;
+    void sendDatagrams(const QByteArray &datagram);
 
 };
 

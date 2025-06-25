@@ -210,3 +210,9 @@ void MainWindow::slot_warning_incompleteFile()
 {
     ui->statusInfoText->append("Предупреждение: файл получен не полностью!");
 }
+
+
+void MainWindow::slot_measuredSpeed(quint64 mbitps)
+{
+    ui->statusbar->showMessage(QString("Скорость отправки, Мбит/с: %1").arg(mbitps));
+}
