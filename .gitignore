@@ -79,3 +79,6 @@ CMakeLists.txt.user*
 #ignore build and bin directories
 /_bin
 /_build
+
+#ignore stresstest files
+*.txt
