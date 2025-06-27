@@ -14,7 +14,7 @@ TCPServer::TCPServer()
     if(isOk == false) emit signal_warning_listeningFailed();
     connect(tcpServer, &QTcpServer::newConnection, this, &TCPServer::slot_newConnection);
     connect(tcpSocket, &QTcpSocket::disconnected, this, &TCPServer::slot_disconnected);
-    connect(tcpSocket, &QAbstractSocket::errorOccurred, this, &TCPServer::slot_error);
+//    connect(tcpSocket, &QAbstractSocket::errorOccurred, this, &TCPServer::slot_error);
     connect(timer, &QTimer::timeout, this, &TCPServer::slot_timerStart);
     connect(measureTimer, &QTimer::timeout, this, &TCPServer::measureSpeed);
 }
